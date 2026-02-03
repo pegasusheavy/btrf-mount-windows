@@ -1,0 +1,33 @@
+# Rust
+/target
+Cargo.lock
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Node.js (for Tauri frontend)
+node_modules/
+dist/
+.pnpm-store/
+
+# Tauri
+src-tauri/target/
+
+# Test artifacts
+*.img
+*.btrfs
+test_data/
+
+# Benchmark results
+/target/criterion/
+
+# Environment
+.env
+.env.local
