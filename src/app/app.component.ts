@@ -1,11 +1,12 @@
 import { Component, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { RouterOutlet, RouterLink, RouterLinkActive } from '@angular/router';
+import { UpdateNotificationComponent } from './components/update-notification/update-notification.component';
 
 @Component({
   selector: 'app-root',
   standalone: true,
-  imports: [CommonModule, RouterOutlet, RouterLink, RouterLinkActive],
+  imports: [CommonModule, RouterOutlet, RouterLink, RouterLinkActive, UpdateNotificationComponent],
   template: `
     <div class="min-h-screen flex flex-col">
       <!-- Header -->
@@ -54,6 +55,9 @@ import { RouterOutlet, RouterLink, RouterLinkActive } from '@angular/router';
           <span>Pegasus Heavy Industries LLC</span>
         </div>
       </footer>
+      
+      <!-- Update notification -->
+      <app-update-notification />
     </div>
   `,
 })

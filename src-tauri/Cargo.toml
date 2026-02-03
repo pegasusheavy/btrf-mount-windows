@@ -17,6 +17,9 @@ btrf-mount-windows = { path = ".." }
 # Tauri
 tauri = { version = "2.0", features = [] }
 tauri-plugin-shell = "2.0"
+tauri-plugin-updater = "2.0"
+tauri-plugin-dialog = "2.0"
+tauri-plugin-process = "2.0"
 
 # Serialization
 serde = { version = "1.0", features = ["derive"] }

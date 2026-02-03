@@ -17,6 +17,8 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+  TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
 
 jobs:
   build-linux:
@@ -246,6 +248,52 @@ jobs:
       - name: List downloaded artifacts
         run: find artifacts -type f | head -50
 
+      - name: Generate latest.json for updater
+        run: |
+          VERSION="${GITHUB_REF#refs/tags/v}"
+          DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          
+          # Find the update bundles
+          WINDOWS_SIG=""
+          WINDOWS_URL=""
+          LINUX_SIG=""
+          LINUX_URL=""
+          
+          # Look for Windows NSIS signature
+          if [ -f "artifacts/windows-nsis/"*".nsis.zip.sig" ]; then
+            WINDOWS_SIG=$(cat artifacts/windows-nsis/*.nsis.zip.sig 2>/dev/null || echo "")
+            WINDOWS_URL="https://github.com/pegasusheavy/btrf-mount-windows/releases/download/v${VERSION}/$(ls artifacts/windows-nsis/*.nsis.zip 2>/dev/null | xargs basename || echo '')"
+          fi
+          
+          # Look for Linux AppImage signature
+          if [ -f "artifacts/linux-appimage/"*".AppImage.sig" ]; then
+            LINUX_SIG=$(cat artifacts/linux-appimage/*.AppImage.sig 2>/dev/null || echo "")
+            LINUX_URL="https://github.com/pegasusheavy/btrf-mount-windows/releases/download/v${VERSION}/$(ls artifacts/linux-appimage/*.AppImage 2>/dev/null | xargs basename || echo '')"
+          fi
+          
+          # Create latest.json
+          cat > latest.json << EOF
+          {
+            "version": "${VERSION}",
+            "notes": "See release notes at https://github.com/pegasusheavy/btrf-mount-windows/releases/tag/v${VERSION}",
+            "pub_date": "${DATE}",
+            "platforms": {
+              "windows-x86_64": {
+                "signature": "${WINDOWS_SIG}",
+                "url": "${WINDOWS_URL}"
+              },
+              "linux-x86_64": {
+                "signature": "${LINUX_SIG}",
+                "url": "${LINUX_URL}"
+              }
+            }
+          }
+          EOF
+          
+          echo "Generated latest.json:"
+          cat latest.json
+        continue-on-error: true
+
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
@@ -256,7 +304,11 @@ jobs:
             artifacts/linux-deb/*.deb
             artifacts/linux-rpm/*.rpm
             artifacts/linux-appimage/*.AppImage
+            artifacts/linux-appimage/*.AppImage.sig
             artifacts/windows-msi/*.msi
             artifacts/windows-nsis/*.exe
+            artifacts/windows-nsis/*.nsis.zip
+            artifacts/windows-nsis/*.nsis.zip.sig
+            latest.json
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

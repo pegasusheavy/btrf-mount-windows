@@ -34,6 +34,15 @@
       "certificateThumbprint": null,
       "digestAlgorithm": "sha256",
       "timestampUrl": ""
+    },
+    "createUpdaterArtifacts": true
+  },
+  "plugins": {
+    "updater": {
+      "endpoints": [
+        "https://github.com/pegasusheavy/btrf-mount-windows/releases/latest/download/latest.json"
+      ],
+      "pubkey": ""
     }
   }
 }
