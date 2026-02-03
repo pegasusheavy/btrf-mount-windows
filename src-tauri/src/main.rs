@@ -49,6 +49,9 @@ fn main() {
             commands::list_subvolumes,
             commands::get_volume_info,
             commands::list_mounts,
+            commands::get_library_version,
+            commands::check_library_update,
+            commands::install_library_update,
             check_update,
             install_update,
         ])

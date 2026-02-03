@@ -21,6 +21,69 @@ env:
   TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
 
 jobs:
+  build-library:
+    name: Build Dynamic Library
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            artifact: libbtrf_mount_windows.so
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            artifact: btrf_mount_windows.dll
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+          targets: ${{ matrix.target }}
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-lib-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-lib-
+
+      - name: Build dynamic library (release)
+        run: cargo build --release --lib
+
+      - name: Calculate SHA256 (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          cd target/release
+          sha256sum ${{ matrix.artifact }} > ${{ matrix.artifact }}.sha256
+          cat ${{ matrix.artifact }}.sha256
+
+      - name: Calculate SHA256 (Windows)
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          cd target/release
+          $hash = Get-FileHash -Algorithm SHA256 ${{ matrix.artifact }}
+          "$($hash.Hash.ToLower())  ${{ matrix.artifact }}" | Out-File -Encoding ASCII "${{ matrix.artifact }}.sha256"
+          Get-Content "${{ matrix.artifact }}.sha256"
+
+      - name: Upload library artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: library-${{ matrix.target }}
+          path: |
+            target/release/${{ matrix.artifact }}
+            target/release/${{ matrix.artifact }}.sha256
+          retention-days: 30
+
   build-linux:
     name: Build Linux Packages
     runs-on: ubuntu-latest
@@ -229,7 +292,7 @@ jobs:
 
   release:
     name: Create Release
-    needs: [build-linux, build-windows]
+    needs: [build-library, build-linux, build-windows]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/v') || github.event.inputs.release == 'true'
 
@@ -247,6 +310,52 @@ jobs:
 
       - name: List downloaded artifacts
         run: find artifacts -type f | head -50
+
+      - name: Generate lib-latest.json for library updater
+        run: |
+          VERSION="${GITHUB_REF#refs/tags/v}"
+          DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          
+          # Get Windows library info
+          WIN_SHA256=""
+          WIN_SIZE=0
+          if [ -f "artifacts/library-x86_64-pc-windows-msvc/btrf_mount_windows.dll.sha256" ]; then
+            WIN_SHA256=$(cut -d' ' -f1 artifacts/library-x86_64-pc-windows-msvc/btrf_mount_windows.dll.sha256)
+            WIN_SIZE=$(stat -c%s artifacts/library-x86_64-pc-windows-msvc/btrf_mount_windows.dll 2>/dev/null || echo 0)
+          fi
+          
+          # Get Linux library info
+          LINUX_SHA256=""
+          LINUX_SIZE=0
+          if [ -f "artifacts/library-x86_64-unknown-linux-gnu/libbtrf_mount_windows.so.sha256" ]; then
+            LINUX_SHA256=$(cut -d' ' -f1 artifacts/library-x86_64-unknown-linux-gnu/libbtrf_mount_windows.so.sha256)
+            LINUX_SIZE=$(stat -c%s artifacts/library-x86_64-unknown-linux-gnu/libbtrf_mount_windows.so 2>/dev/null || echo 0)
+          fi
+          
+          cat > lib-latest.json << EOF
+          {
+            "version": "${VERSION}",
+            "current_version": "${VERSION}",
+            "notes": "See release notes at https://github.com/pegasusheavy/btrf-mount-windows/releases/tag/v${VERSION}",
+            "pub_date": "${DATE}",
+            "platforms": {
+              "windows-x86_64": {
+                "url": "https://github.com/pegasusheavy/btrf-mount-windows/releases/download/v${VERSION}/btrf_mount_windows.dll",
+                "sha256": "${WIN_SHA256}",
+                "size": ${WIN_SIZE}
+              },
+              "linux-x86_64": {
+                "url": "https://github.com/pegasusheavy/btrf-mount-windows/releases/download/v${VERSION}/libbtrf_mount_windows.so",
+                "sha256": "${LINUX_SHA256}",
+                "size": ${LINUX_SIZE}
+              }
+            }
+          }
+          EOF
+          
+          echo "Generated lib-latest.json:"
+          cat lib-latest.json
+        continue-on-error: true
 
       - name: Generate latest.json for updater
         run: |
@@ -309,6 +418,11 @@ jobs:
             artifacts/windows-nsis/*.exe
             artifacts/windows-nsis/*.nsis.zip
             artifacts/windows-nsis/*.nsis.zip.sig
+            artifacts/library-x86_64-pc-windows-msvc/btrf_mount_windows.dll
+            artifacts/library-x86_64-pc-windows-msvc/btrf_mount_windows.dll.sha256
+            artifacts/library-x86_64-unknown-linux-gnu/libbtrf_mount_windows.so
+            artifacts/library-x86_64-unknown-linux-gnu/libbtrf_mount_windows.so.sha256
             latest.json
+            lib-latest.json
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

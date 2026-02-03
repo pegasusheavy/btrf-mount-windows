@@ -217,3 +217,144 @@ pub async fn list_mounts(state: State<'_, AppState>) -> Result<Vec<MountInfo>, S
         })
         .collect())
 }
+
+// ============================================================================
+// Library Update Commands
+// ============================================================================
+
+/// Library version information
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LibraryVersionInfo {
+    pub version: String,
+    pub installed_version: Option<String>,
+    pub update_available: bool,
+}
+
+/// Library update information
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LibraryUpdateInfo {
+    pub version: String,
+    pub current_version: String,
+    pub notes: Option<String>,
+    pub pub_date: Option<String>,
+    pub download_size: u64,
+}
+
+/// Get the current library version
+#[tauri::command]
+pub async fn get_library_version() -> Result<LibraryVersionInfo, String> {
+    use btrf_mount_windows::{LibraryUpdater, VERSION};
+    
+    let updater = LibraryUpdater::new(LibraryUpdater::default_lib_dir());
+    let installed = updater.installed_version().map_err(|e| e.to_string())?;
+    
+    Ok(LibraryVersionInfo {
+        version: VERSION.to_string(),
+        installed_version: installed.clone(),
+        update_available: false, // Will be updated by check_library_update
+    })
+}
+
+/// Check for library updates
+#[tauri::command]
+pub async fn check_library_update() -> Result<Option<LibraryUpdateInfo>, String> {
+    use btrf_mount_windows::VERSION;
+    
+    // Fetch the update manifest
+    let manifest_url = "https://github.com/pegasusheavy/btrf-mount-windows/releases/latest/download/lib-latest.json";
+    
+    let response = reqwest::get(manifest_url)
+        .await
+        .map_err(|e| format!("Failed to fetch update manifest: {}", e))?;
+    
+    if !response.status().is_success() {
+        return Ok(None);
+    }
+    
+    let manifest: btrf_mount_windows::LibraryUpdate = response
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse update manifest: {}", e))?;
+    
+    // Check if update is needed
+    if manifest.version == VERSION {
+        return Ok(None);
+    }
+    
+    // Get platform-specific info
+    #[cfg(windows)]
+    let platform_info = &manifest.platforms.windows_x64;
+    #[cfg(target_os = "linux")]
+    let platform_info = &manifest.platforms.linux_x64;
+    #[cfg(not(any(windows, target_os = "linux")))]
+    let platform_info: &Option<btrf_mount_windows::updater::LibraryDownload> = &None;
+    
+    let download_size = platform_info.as_ref().map(|p| p.size).unwrap_or(0);
+    
+    Ok(Some(LibraryUpdateInfo {
+        version: manifest.version,
+        current_version: VERSION.to_string(),
+        notes: manifest.notes,
+        pub_date: manifest.pub_date,
+        download_size,
+    }))
+}
+
+/// Install a library update
+#[tauri::command]
+pub async fn install_library_update(app: tauri::AppHandle) -> Result<(), String> {
+    use btrf_mount_windows::LibraryUpdater;
+    
+    // Fetch the update manifest
+    let manifest_url = "https://github.com/pegasusheavy/btrf-mount-windows/releases/latest/download/lib-latest.json";
+    
+    let response = reqwest::get(manifest_url)
+        .await
+        .map_err(|e| format!("Failed to fetch update manifest: {}", e))?;
+    
+    let manifest: btrf_mount_windows::LibraryUpdate = response
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse update manifest: {}", e))?;
+    
+    // Get platform-specific info
+    #[cfg(windows)]
+    let platform_info = manifest.platforms.windows_x64.ok_or("Windows platform not available")?;
+    #[cfg(target_os = "linux")]
+    let platform_info = manifest.platforms.linux_x64.ok_or("Linux platform not available")?;
+    #[cfg(not(any(windows, target_os = "linux")))]
+    return Err("Platform not supported".to_string());
+    
+    // Download the library
+    let _ = app.emit("library-update-progress", serde_json::json!({
+        "stage": "downloading",
+        "progress": 0
+    }));
+    
+    let lib_response = reqwest::get(&platform_info.url)
+        .await
+        .map_err(|e| format!("Failed to download library: {}", e))?;
+    
+    let lib_data = lib_response
+        .bytes()
+        .await
+        .map_err(|e| format!("Failed to read library data: {}", e))?;
+    
+    let _ = app.emit("library-update-progress", serde_json::json!({
+        "stage": "installing",
+        "progress": 50
+    }));
+    
+    // Install the library
+    let updater = LibraryUpdater::new(LibraryUpdater::default_lib_dir());
+    updater
+        .install_library(&lib_data, &manifest.version, &platform_info.sha256)
+        .map_err(|e| format!("Failed to install library: {}", e))?;
+    
+    let _ = app.emit("library-update-progress", serde_json::json!({
+        "stage": "complete",
+        "progress": 100
+    }));
+    
+    Ok(())
+}

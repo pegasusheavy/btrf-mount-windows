@@ -9,6 +9,7 @@
 //! - Compression support (zlib, LZO, zstd)
 //! - Physical disk and image file mounting
 //! - GUI for volume management (via Tauri)
+//! - Independent library updates
 //!
 //! # Architecture
 //!
@@ -17,10 +18,14 @@
 //! - [`blockdev`]: Block device abstraction layer for physical disks and image files
 //! - [`core`]: BTRFS filesystem implementation (parsing, trees, compression)
 //! - [`fuse`]: Dokan filesystem handler for Windows integration
+//! - [`ffi`]: C-compatible FFI for dynamic library loading
+//! - [`updater`]: Library update management
 
 pub mod blockdev;
 pub mod core;
+pub mod ffi;
 pub mod fuse;
+pub mod updater;
 
 pub use blockdev::{BlockDevice, BlockDeviceError};
 pub use core::{
@@ -28,6 +33,7 @@ pub use core::{
     Superblock, TreeType,
 };
 pub use fuse::{BtrfsMount, MountOptions};
+pub use updater::{LibraryUpdater, LibraryUpdate, UpdateError};
 
 #[cfg(windows)]
 pub use fuse::BtrfsHandler;
